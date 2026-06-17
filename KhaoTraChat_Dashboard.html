@@ -246,6 +246,10 @@ footer{text-align:center;padding:36px 22px 50px;color:var(--ink-3);font-size:12.
 .legendnote span{display:inline-flex;align-items:center;gap:5px}
 .legendnote i{width:11px;height:11px;border-radius:3px;display:inline-block}
 .hide{display:none!important}
+.kpi-block-h{font-size:13.5px;font-weight:800;color:var(--red-700);background:var(--red-50);
+  border-left:4px solid var(--red-600);border-radius:8px;padding:9px 13px;margin:4px 0 12px}
+.kpi-block-h b{color:var(--ink-1)}
+.kpi-divider{height:1px;background:var(--line-2);margin:30px 0 22px}
 /* clickable content rows / cards */
 #contentTable tbody tr{cursor:pointer;transition:background .12s}
 #contentTable tbody tr:hover{background:var(--red-50)}
@@ -359,15 +363,35 @@ footer{text-align:center;padding:36px 22px 50px;color:var(--ink-3);font-size:12.
           <div class="sec-title">KPI เป้าหมาย vs ผลจริง (Actual)</div>
           <div class="sec-pill" id="kpiModePill">Standard KPI</div>
         </div>
+
+        <div class="kpi-block-h">📅 รายเดือน — แหล่งข้อมูล: <b>Sheet “KPI - Apple apple”</b></div>
         <div class="sec-sub" id="kpiSub"></div>
         <div class="grid g4" id="kpiCards"></div>
         <div class="grid" style="grid-template-columns:1.3fr 1fr;margin-top:16px" id="kpiChartRow">
           <div class="chart-card">
-            <div class="ch-t">KPI Achievement — เป้า vs ผลจริง</div>
+            <div class="ch-t">KPI Achievement — เป้า vs ผลจริง (รายเดือน)</div>
             <div class="ch-s" id="kpiChartSub"></div>
             <div class="ch-wrap ch-h320"><canvas id="kpiChart"></canvas></div>
           </div>
           <div class="card" id="kpiNote"></div>
+        </div>
+
+        <div class="kpi-divider"></div>
+
+        <div class="kpi-block-h">📆 ทั้งปี 12 เดือน — แหล่งข้อมูล: <b>Sheet “KPI - 12 Months”</b></div>
+        <div class="sec-sub" id="kpiAnnualSub"></div>
+        <div class="grid g4" id="kpiAnnualCards"></div>
+        <div class="grid" style="grid-template-columns:1.3fr 1fr;margin-top:16px">
+          <div class="chart-card">
+            <div class="ch-t">เป้าทั้งปี vs ผลสะสม (Actual YTD)</div>
+            <div class="ch-s">แท่งอ่อน = เป้าทั้งปี · แท่งเข้ม = ผลสะสมจริง · ป้าย = % ของเป้าทั้งปี</div>
+            <div class="ch-wrap ch-h320"><canvas id="kpiAnnualChart"></canvas></div>
+          </div>
+          <div class="card" id="kpiAnnualNote"></div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <div class="ch-t" style="font-size:14.5px;font-weight:800;margin-bottom:12px">ตาราง KPI 12 เดือน — เป้า / ผลจริง / % / คงเหลือ</div>
+          <div class="tbl-wrap"><table class="dt" id="kpiAnnualTable"></table></div>
         </div>
       </section>
 
@@ -614,6 +638,12 @@ function agg(rows){
     cpe: eng? spend/eng:0, cpc: clk? spend/clk:0, ctr: impr? clk/impr*100:0 };
 }
 function kpiMonthly(month){ return (DB.kpi_monthly||[]).find(r=>r.Months===month) || null; }
+function kpiAnnual(){ return (DB.kpi_annual||[])[0] || null; }
+function monthsElapsed(){
+  // months that already have actual results in the KPI sheet
+  const n=(DB.kpi_monthly||[]).filter(r=>r['Actual Impression (Facebook)']!=null || r['Actual reach (Facebook)']!=null).length;
+  return n||1;
+}
 function plannedMonthlySpend(){
   const a=(DB.kpi_annual||[])[0]; const v=a?N(a['KPIs Amout Spend (Facebook)']):0; return v? v/12 : 0;
 }
@@ -630,6 +660,7 @@ function render(){
   const rows=rowsFor(m,ob), A=agg(rows);
   document.getElementById('coverSub').textContent=`รายงานผลการดำเนินงานโซเชียล · เดือน ${m} 2026`;
   renderKPI(m,A,rows);
+  renderKPIAnnual();
   renderMoM(m,cmp,ob,A);
   renderOverview(m,cmp,ob,A);
   renderObjective(m);
@@ -649,12 +680,18 @@ function renderKPI(m,A){
   document.getElementById('kpiSub').textContent =
     `เป้า vs ผลจริง · ${m} 2026` + (apple? ` · ปรับ KPI ตามสัดส่วนงบที่ใช้จริง (${pct(factor*100,0)} ของแผน)` : '');
 
+  // Actuals pulled directly from "KPI - Apple apple" sheet; fall back to raw aggregation if blank
+  const aImpr  = (km && km['Actual Impression (Facebook)']!=null) ? N(km['Actual Impression (Facebook)']) : A.impr;
+  const aReach = (km && km['Actual reach (Facebook)']!=null)      ? N(km['Actual reach (Facebook)'])      : A.reach;
+  const aEng   = (km && km['Actual Engagement (Facebook)']!=null) ? N(km['Actual Engagement (Facebook)']) : A.eng;
+  const aSpend = (km && km['Amout Spend (Tiktok)']!=null)         ? N(km['Amout Spend (Tiktok)'])          : A.spend;
+
   // metrics: spend(annual-derived monthly), impression, reach, engagement
   const defs=[
-    {label:'Spend (งบที่ใช้)', actual:A.spend, target:planned, money:true, note:'เทียบงบเฉลี่ยต่อเดือน', lowerBetter:false, isSpend:true},
-    {label:'Impressions', actual:A.impr, target: km?N(km['KPIs Impression (Facebook)']):0},
-    {label:'Reach', actual:A.reach, target: km?N(km['KPIs Reach (Facebook)']):0},
-    {label:'Engagement', actual:A.eng, target: km?N(km['KPIs Engagement (Facebook)']):0},
+    {label:'Spend (งบที่ใช้)', actual:aSpend, target:planned, money:true, note:'เทียบงบเฉลี่ยต่อเดือน', lowerBetter:false, isSpend:true},
+    {label:'Impressions', actual:aImpr, target: km?N(km['KPIs Impression (Facebook)']):0},
+    {label:'Reach', actual:aReach, target: km?N(km['KPIs Reach (Facebook)']):0},
+    {label:'Engagement', actual:aEng, target: km?N(km['KPIs Engagement (Facebook)']):0},
   ];
   const wrap=document.getElementById('kpiCards'); wrap.innerHTML='';
   defs.forEach(d=>{
@@ -688,7 +725,7 @@ function renderKPI(m,A){
   document.getElementById('kpiChartSub').textContent = apple?'KPI ปรับตามงบจริง (Apple-to-Apple)':'KPI ตามแผนเต็มเดือน';
   const labels=['Impressions','Reach','Engagement'];
   const tgts=[km?N(km['KPIs Impression (Facebook)']):0, km?N(km['KPIs Reach (Facebook)']):0, km?N(km['KPIs Engagement (Facebook)']):0].map(v=>v*factor);
-  const acts=[A.impr,A.reach,A.eng];
+  const acts=[aImpr,aReach,aEng];
   mk('kpiChart',{type:'bar',data:{labels,datasets:[
       {label:'เป้า (Target)',data:tgts,backgroundColor:RED3,borderRadius:6,maxBarThickness:46},
       {label:'ผลจริง (Actual)',data:acts,backgroundColor:RED,borderRadius:6,maxBarThickness:46}]},
@@ -710,9 +747,96 @@ function renderKPI(m,A){
       • Reach <b>${pct(accR,0)}</b> ของเป้า<br>
       • Engagement <b>${pct(accE,0)}</b> ของเป้า<br>
       <div style="margin-top:11px;padding:10px 12px;background:var(--gold-50);border-radius:10px;font-size:12.5px">
-      💰 ใช้งบ <b>${baht(A.spend)}</b> จากแผน <b>${baht(planned)}</b>/เดือน (<b>${pct(planned>0?A.spend/planned*100:0,0)}</b>) —
-      ${A.spend<planned? 'ยังมีงบเหลือสำหรับเร่งผลลัพธ์':'ใช้งบเต็มแผน'}</div>
+      💰 ใช้งบ <b>${baht(aSpend)}</b> จากแผน <b>${baht(planned)}</b>/เดือน (<b>${pct(planned>0?aSpend/planned*100:0,0)}</b>) —
+      ${aSpend<planned? 'ยังมีงบเหลือสำหรับเร่งผลลัพธ์':'ใช้งบเต็มแผน'}</div>
     </div>`;
+}
+
+/* ---------------- KPI 12 Months (Annual) ---------------- */
+function renderKPIAnnual(){
+  const a=kpiAnnual();
+  const sub=document.getElementById('kpiAnnualSub');
+  if(!a){ if(sub) sub.textContent='ไม่พบข้อมูล Sheet “KPI - 12 Months”'; return; }
+  const elapsed=monthsElapsed();
+  const paceP = elapsed/12*100; // expected % of annual if on track
+  sub.innerHTML=`เป้าทั้งปี vs ผลสะสมจริง (Actual YTD) · ผ่านไป <b>${elapsed}/12</b> เดือน (≈ ${pct(paceP,0)} ของปี) · เกณฑ์ on-track = ${pct(paceP,0)}`;
+
+  const metrics=[
+    {key:'Spend', label:'💰 Spend (งบ)', kpi:N(a['KPIs Amout Spend (Facebook)']), act:N(a['Actual Amout Spend (Facebook)']), money:true},
+    {key:'Impr',  label:'👁️ Impressions', kpi:N(a['KPIs Impression (Facebook)']), act:N(a['Actual Impression (Facebook)'])},
+    {key:'Reach', label:'📡 Reach', kpi:N(a['KPIs Reach (Facebook)']), act:N(a['Actual reach (Facebook)'])},
+    {key:'Eng',   label:'❤️ Engagement', kpi:N(a['KPIs Engagement (Facebook)']), act:N(a['Actual Engagement (Facebook)'])},
+  ];
+
+  // cards
+  const wrap=document.getElementById('kpiAnnualCards'); wrap.innerHTML='';
+  metrics.forEach(d=>{
+    const p = d.kpi>0 ? d.act/d.kpi*100 : 0;
+    // for spend, lower vs budget is fine; for the rest, ahead-of-pace is good
+    let col,fill,badge;
+    if(d.money){
+      col='var(--gold-600)'; fill='var(--gold)'; badge=`${pct(p,1)} ของงบปี`;
+    } else {
+      const ahead = p>=paceP; col=ahead?'var(--pos)':'var(--warn)';
+      fill=ahead?'linear-gradient(90deg,#1E8E5F,#27A56C)':'linear-gradient(90deg,#E08A1E,#F3B644)';
+      badge=(ahead?'▲ ':'')+pct(p,1)+' ของเป้าปี';
+    }
+    wrap.insertAdjacentHTML('beforeend',`
+      <div class="kpi-card">
+        <div class="kc-top"><div class="kc-label">${d.label}</div>
+          <div class="kc-badge" style="color:${col}">${badge}</div></div>
+        <div class="kc-actual">${d.money?baht(d.act):fmtK(d.act)}</div>
+        <div class="kc-target">เป้าทั้งปี: ${d.money?baht(d.kpi):fmtK(d.kpi)}</div>
+        <div class="kc-bar"><i style="width:${Math.min(100,p)}%;background:${fill}"></i>
+          <span class="tgtmark" style="left:${Math.min(100,paceP)}%" title="ควรได้ตามพ่าย ${pct(paceP,0)}"></span></div>
+        <div class="kc-pctline"><span>0</span><span>on-track ${pct(paceP,0)}</span><span>100%</span></div>
+      </div>`);
+    const bc=wrap.lastElementChild.querySelector('.kc-badge');
+    bc.style.background = d.money?'var(--gold-50)':(col.includes('pos')?'var(--pos-bg)':'var(--warn-bg)');
+  });
+
+  // chart: % of annual achieved vs expected pace (grouped horizontal bars)
+  const labels=metrics.map(d=>d.label.replace(/^[^\s]+\s/,''));
+  const achPct=metrics.map(d=>d.kpi>0?d.act/d.kpi*100:0);
+  mk('kpiAnnualChart',{type:'bar',data:{labels,datasets:[
+      {label:'ผลสะสมจริง (% ของเป้าปี)',data:achPct,backgroundColor:RED,borderRadius:6,maxBarThickness:30},
+      {label:`ควรได้ตามพ่าย (${pct(paceP,0)})`,data:metrics.map(()=>paceP),backgroundColor:RED3,borderRadius:6,maxBarThickness:30}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'top'},
+        datalabels:{anchor:'end',align:'end',font:{weight:'800',size:10},color:INK,formatter:v=>pct(v,1)},
+        tooltip:{callbacks:{label:c=>c.dataset.label+': '+pct(c.raw,1)}}},
+      scales:{x:{ticks:{callback:v=>v+'%'},grid:{color:LINE},suggestedMax:Math.max(15,...achPct)*1.15},
+              y:{grid:{display:false}}}}});
+
+  // note
+  const beat=metrics.filter(d=>!d.money && d.kpi>0 && d.act/d.kpi*100>=paceP).length;
+  const reachP=metrics[2].kpi>0?metrics[2].act/metrics[2].kpi*100:0;
+  const engP=metrics[3].kpi>0?metrics[3].act/metrics[3].kpi*100:0;
+  const spendP=metrics[0].kpi>0?metrics[0].act/metrics[0].kpi*100:0;
+  document.getElementById('kpiAnnualNote').innerHTML=`
+    <div class="ch-t" style="font-size:14px;font-weight:800;margin-bottom:10px">สรุปความคืบหน้าทั้งปี</div>
+    <div style="font-size:13.5px;line-height:1.85;color:var(--ink-2)">
+      ผ่านไป <b>${elapsed}/12</b> เดือน (ควรได้ ~<b>${pct(paceP,0)}</b> ของเป้าปี)<br>
+      • Reach สะสม <b>${pct(reachP,1)}</b> ของเป้าปี<br>
+      • Engagement สะสม <b>${pct(engP,1)}</b> ของเป้าปี<br>
+      • ใช้งบสะสม <b>${pct(spendP,1)}</b> ของงบทั้งปี<br>
+      <div style="margin-top:11px;padding:10px 12px;background:var(--gold-50);border-radius:10px;font-size:12.5px">
+      📌 มี <b style="color:var(--pos)">${beat}/3</b> ตัวชี้วัด (Impr/Reach/Eng) ที่ <b>นำหน้าพ่าย</b> ของปี
+      โดยใช้งบเพียง <b>${pct(spendP,1)}</b> ของงบทั้งปี — ประสิทธิภาพต่อบาทสูงมาก</div>
+    </div>`;
+
+  // table
+  const t=document.getElementById('kpiAnnualTable');
+  t.innerHTML=`<thead><tr><th>ตัวชี้วัด</th><th>เป้าทั้งปี (KPI)</th><th>ผลจริงสะสม (Actual)</th><th>% ของเป้า</th><th>คงเหลือ</th></tr></thead><tbody>`+
+    metrics.map(d=>{
+      const p=d.kpi>0?d.act/d.kpi*100:0; const rem=Math.max(0,d.kpi-d.act);
+      const ok=!d.money && p>=paceP;
+      return `<tr><td>${d.label}</td>
+        <td>${d.money?baht(d.kpi):fmt(d.kpi)}</td>
+        <td>${d.money?baht(d.act):fmt(d.act)}</td>
+        <td class="${ok?'pos':''}">${pct(p,1)}</td>
+        <td>${d.money?baht(rem):fmt(rem)}</td></tr>`;
+    }).join('')+`</tbody>`;
 }
 
 /* ---------------- MoM ---------------- */
